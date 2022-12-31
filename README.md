@@ -1,6 +1,6 @@
 # No More Plan – Sideloading MBR for Plan9 and Linux
 
-I wanted to have a dual boot with Plan9 and Linux on my computer, but couldn’t use Plan9 MBR, which only supports the system itself, nor GRUB or other bootloaders that would not accept to load a kernel from an unknown filesystem. Hence, an hybrid approach was chosen, so as not to pollute any of the operating systems: GRUB is installed on the Linux partition (as VBR), and the Plan9 VBR is kept as is on the Plan9 partition.
+I wanted to have a dual boot with Plan9 and Linux on my computer, but couldn't use Plan9 MBR, which only supports the system itself, nor GRUB or other bootloaders that would not accept to load a kernel from an unknown filesystem. Hence, an hybrid approach was chosen, so as not to pollute any of the operating systems: GRUB is installed on the Linux partition (as VBR), and the Plan9 VBR is kept as is on the Plan9 partition.
 
 This system cannot work without a dispatcher allowing to choose which system to boot from: that is where No More Plan enters into play: it simply sideloads one of the VBR (out of four maximum) and passes execution to it.
 

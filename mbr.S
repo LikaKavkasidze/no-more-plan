@@ -59,23 +59,31 @@ relocate_mbr:
 relocated_segment:
 	// Set SI to base string address
 	mov $hello_str,%si
+	// Set return address
+	mov $test_parts,%di
 print_str:
 	// Access to char pointed by SI
 	mov (%si),%al
+	// Skip over jump
+	cmp $0,%al
+	jne print_char
+	// If the char is NUL, stop
+	jmp *%di
+print_char:
 	// 0E = Write Character in TTY Mode
 	mov $0x0E,%ah
 	// 10 = Video Services
 	int $0x10
 	// Point to the next char
 	inc %si
-	// If the char was NUL, stop
-	cmp $0,%al
 	// Loop for characters
-	jne print_str
+	jmp print_str
 test_parts:
 	// Get start of first partition
 	mov $_start,%si
 	add $0x1BE,%si
+	// Reset partition counter (CX)
+	xor %cx,%cx
 part_loop:
 	// Extract bootable flag
 	mov (%si),%bl
@@ -85,6 +93,8 @@ part_loop:
 	jne part_loop_next
 	// Save partition start LBA
 	pushl 0x8(%si)
+	// Increment partition counter
+	add $0x1,%cx
 part_loop_next:
 	// Access next partition
 	add $0x10,%si
@@ -96,6 +106,43 @@ part_loop_next:
 	cmp %ebp,%esp
 	// Early ending
 	je end
+	// Set SI to base string address
+	mov $ask_str,%si
+	// Set return address
+	mov $display_parts,%di
+	// Call print routine
+	jmp print_str
+display_parts:
+	// Display a "F" (0x46) char
+	mov $0x46,%al
+	// 0E = Write Character in TTY Mode
+	mov $0x0E,%ah
+	// 10 = Video Services
+	int $0x10
+	// Transform partition number to ASCII
+	mov %cl,%al
+	add $0x30,%al
+	// 0E = Write Character in TTY Mode
+	mov $0x0E,%ah
+	// 10 = Video Services
+	int $0x10
+loop_parts:
+	// Loop if a part remains
+	sub $0x1,%cx
+	jnz display_parts
+wait_input:
+	// 01 = Read Input Status
+	movb $0x1,%ah
+	// 16 = Keyboard Services
+    int $0x16
+	// Loop until keypress
+	je wait_input
+	// Set SI to base string address
+	mov $end_str,%si
+	// Set return address
+	mov $valid_partition,%di
+	// Call print routine
+	jmp print_str
 valid_partition:
 	// 41 = EDD Installation Check
 	mov $0x41,%ah
@@ -119,10 +166,24 @@ read_lba:
 	// Go to 9LOAD
 	jmp NMP_BASE_ADDR
 end:
+	// Set SI to base string address
+	mov $error_str,%si
+	// Set return address
+	mov $end_halt,%di
+	// Call print routine
+	jmp print_str
+end_halt:
+	// Halt the system
 	hlt
 
 hello_str:
 	.asciz "No. More. Plan.\r\n"
 
 ask_str:
-	.asciz "Partition to boot? "
+	.asciz "Partition to boot? F12 "
+
+end_str:
+	.asciz "\r\nBooting...\r\n"
+
+error_str:
+	.asciz "An error occured."
