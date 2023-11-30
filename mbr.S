@@ -5,29 +5,6 @@
 .section .text
 .globl _start
 _start:
-	jmp after_bpb
-disk_address_packet:
-	// The very beginning of the MBR is available for code
-	// So we optimize space by having the disk packet here
-	.byte 0x10
-	.byte 0
-	.word 0x01
-	.long NMP_BASE_ADDR
-bpb:
-	// BIOS parameter block
-	// Useless FAT parameters
-	.rept 14
-	.byte 0
-	.endr
-	// Physical sectors per track
-	.word 63
-	// Number of heads
-	.word 255
-	// More useless FAT parameters
-	.rept 73
-	.byte 0
-	.endr
-after_bpb:
 	// Disable interrupts
 	cli
 	// Zero segment registers
@@ -134,7 +111,7 @@ wait_input:
 	// 01 = Read Input Status
 	movb $0x1,%ah
 	// 16 = Keyboard Services
-    int $0x16
+	int $0x16
 	// Loop until keypress
 	je wait_input
 	// Set SI to base string address
@@ -175,6 +152,12 @@ end:
 end_halt:
 	// Halt the system
 	hlt
+
+disk_address_packet:
+	.byte 0x10
+	.byte 0
+	.word 0x01
+	.long NMP_BASE_ADDR
 
 hello_str:
 	.asciz "No. More. Plan.\r\n"
