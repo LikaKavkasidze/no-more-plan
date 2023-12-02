@@ -81,8 +81,6 @@ part_loop:
 	// Check if partition is bootable
 	cmp $0x80,%bl
 	jne part_loop_next
-	// If bootable, save partition start LBA to chainload
-	pushl 0x8(%si)
 part_loop_display:
 	// Displays an "F" (0x46) char
 	mov $0x46,%al
@@ -127,11 +125,28 @@ valid_partition:
 	int $0x13
 	// CF signals no support
 	jc end
+read_part_number:
+	// 00 = Get Keystroke
+	movb $0x0,%ah
+	// 16 = Keyboard Services
+	int $0x16
+	// Convert F-key to partition number: BIOS scan code is
+	// between 3B and 3F for F1-F5
+	subb $0x3B,%ah
+	// F5 should load next sector
+	movl $0x1,%ebx
+	cmp $4,%ah
+	je read_lba
+	// Shift to move AH to AL [>> 2] and multiply by 0x10 [<< 1]
+	sar %ax
+	// Get LBA value of partition to boot
+	mov $_start,%si
+	add $0x1BE,%si
+	add %ax,%si
+	movl 0x8(%si),%ebx
 read_lba:
 	// SI = DAP location
 	mov $disk_address_packet,%si
-	// Get last valid partition
-	popl %ebx
 	// Append start sector to DAP
 	movl %ebx,0x8(%si)
 	// 42 = Extended sector read
