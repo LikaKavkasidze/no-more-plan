@@ -2,42 +2,46 @@
 #define NMP_RELOC_ADDR 0x600
 
 .code16
+.att_mnemonic
 .section .text
 .globl _start
 _start:
-	// Disable interrupts
+	// Disable interrupts while no stack is available
 	cli
-	// Zero segment registers
+	// Ensure string operations will increment index register
+	cld
+	// Zero segment registers: no assumption shall be made about
+	// their initial state
 	xor %ax, %ax
 	mov %ax, %ds
 	mov %ax, %ss
 	mov %ax, %es
 	// Set up stack
-	mov $NMP_RELOC_ADDR,%ebp
-	mov %ebp,%esp
-	// DX register may contain boot device, so push to keep it
+	mov $NMP_BASE_ADDR,%bp
+	mov %bp,%sp
+	// Interrupts can be triggered again
+	sti
+	// Keep DX register as it may contain boot device
 	push %dx
 relocate_mbr:
-	// Set relocation source
+	// Relocate code from BASE_ADDR to RELOC_ADDR because the chainloaded
+	// bootloader will be loaded at the initial MBR address
 	mov $NMP_BASE_ADDR,%si
-	// Set relocation destination
 	mov $NMP_RELOC_ADDR,%di
-	// Relocation byte count
 	mov $512,%cx
-	// Count direction: backward
+	// Set backward count direction
 	mov $0x1,%dx
-	// Relocate code
 	rep
 	movsb
 	// Recover value of DX register
 	pop %dx
-	// Jump to relocated code
-	jmp relocated_segment+NMP_RELOC_ADDR-NMP_BASE_ADDR
+	// Far jump to relocated code because some bugging BIOSes do not implement JMP correctly
+	ljmp $0,$relocated_segment
 relocated_segment:
 	// Set SI to base string address
 	mov $hello_str,%si
 	// Set return address
-	mov $test_parts,%di
+	mov $choose_message,%di
 print_str:
 	// Access to char pointed by SI
 	mov (%si),%al
@@ -55,6 +59,11 @@ print_char:
 	inc %si
 	// Loop for characters
 	jmp print_str
+choose_message:
+	// Display a message for choosing the partition
+	mov $ask_str,%si
+	mov $test_parts,%di
+	jmp print_str
 test_parts:
 	// Get start of first partition
 	mov $_start,%si
@@ -62,51 +71,42 @@ test_parts:
 	// Reset partition counter (CX)
 	xor %cx,%cx
 part_loop:
-	// Extract bootable flag
+	// Check for boot signature to see if all partitions have
+	// been looped over
 	mov (%si),%bl
-	// Test for bootable partition
-	cmp $0x80,%bl
-	// Skip saving if non-bootable
-	jne part_loop_next
-	// Save partition start LBA
-	pushl 0x8(%si)
-	// Increment partition counter
+	cmp $0x55,%bl
+	je part_loop_end
+	// Increment partition counter: used to display partition number
 	add $0x1,%cx
-part_loop_next:
-	// Access next partition
-	add $0x10,%si
-	// Check for end
-	cmp $0x7FE,%si
-	// Test next partition
-	jne part_loop
-	// If no bootable partition was found
-	cmp %ebp,%esp
-	// Early ending
-	je end
-	// Set SI to base string address
-	mov $ask_str,%si
-	// Set return address
-	mov $display_parts,%di
-	// Call print routine
-	jmp print_str
-display_parts:
-	// Display a "F" (0x46) char
+	// Check if partition is bootable
+	cmp $0x80,%bl
+	jne part_loop_next
+	// If bootable, save partition start LBA to chainload
+	pushl 0x8(%si)
+part_loop_display:
+	// Displays an "F" (0x46) char
 	mov $0x46,%al
 	// 0E = Write Character in TTY Mode
 	mov $0x0E,%ah
 	// 10 = Video Services
 	int $0x10
-	// Transform partition number to ASCII
+	// Convert partition number to ASCII number
 	mov %cl,%al
 	add $0x30,%al
 	// 0E = Write Character in TTY Mode
 	mov $0x0E,%ah
 	// 10 = Video Services
 	int $0x10
-loop_parts:
-	// Loop if a part remains
-	sub $0x1,%cx
-	jnz display_parts
+part_loop_next:
+	// Access next partition: PTE length is 16
+	add $0x10,%si
+	// Test next partition
+	jne part_loop
+part_loop_end:
+	// Display extra key for after-MBR loading (eg. GRUB)
+	mov $extra_part_str,%si
+	mov $wait_input,%di
+	jmp print_str
 wait_input:
 	// 01 = Read Input Status
 	movb $0x1,%ah
@@ -114,11 +114,9 @@ wait_input:
 	int $0x16
 	// Loop until keypress
 	je wait_input
-	// Set SI to base string address
+	// Indicate chainloading is in progress
 	mov $end_str,%si
-	// Set return address
 	mov $valid_partition,%di
-	// Call print routine
 	jmp print_str
 valid_partition:
 	// 41 = EDD Installation Check
@@ -140,33 +138,40 @@ read_lba:
 	mov $0x42,%ah
 	// 13 = Disk Services
 	int $0x13
-	// Go to 9LOAD
+	// Check for error and jump to loaded code
+	jc end
 	jmp NMP_BASE_ADDR
 end:
-	// Set SI to base string address
+	// Display error message and halt
 	mov $error_str,%si
-	// Set return address
 	mov $end_halt,%di
-	// Call print routine
 	jmp print_str
 end_halt:
-	// Halt the system
 	hlt
 
 disk_address_packet:
+	// Length of the DAP
 	.byte 0x10
-	.byte 0
-	.word 0x01
-	.long NMP_BASE_ADDR
+	.byte 0x00
+	// Number of sectors to read
+	.2byte 0x0001
+	// Pointer to the memory buffer
+	.4byte NMP_BASE_ADDR
+	// LBA start sector
+	.8byte 0x0000000000000000
 
 hello_str:
 	.asciz "No. More. Plan.\r\n"
 
 ask_str:
-	.asciz "Partition to boot? F12 "
+	.asciz "Partition to boot? "
+
+extra_part_str:
+	.asciz " F5"
 
 end_str:
 	.asciz "\r\nBooting...\r\n"
 
 error_str:
 	.asciz "An error occured."
+
