@@ -137,8 +137,8 @@ read_part_number:
 	movl $0x1,%ebx
 	cmp $4,%ah
 	je read_lba
-	// Shift to move AH to AL [>> 2] and multiply by 0x10 [<< 1]
-	sar %ax
+	// Shift to move AH to AL [>> 8] and multiply by 0x10 [<< 4]
+	sar $4,%ax
 	// Get LBA value of partition to boot
 	mov $_start,%si
 	add $0x1BE,%si
