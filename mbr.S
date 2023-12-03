@@ -1,5 +1,7 @@
 #define NMP_BASE_ADDR 0x7C00
 #define NMP_RELOC_ADDR 0x600
+#define NMP_CHAIN_GRUB 0x8000
+#define NMP_CHAIN_VBR 0x7C00
 
 .code16
 .att_mnemonic
@@ -35,6 +37,7 @@ relocate_mbr:
 	movsb
 	// Recover value of DX register
 	pop %dx
+	push %dx
 	// Far jump to relocated code because some bugging BIOSes do not implement JMP correctly
 	ljmp $0,$relocated_segment
 relocated_segment:
@@ -133,10 +136,16 @@ read_part_number:
 	// Convert F-key to partition number: BIOS scan code is
 	// between 3B and 3F for F1-F5
 	subb $0x3B,%ah
-	// F5 should load next sector
-	movl $0x1,%ebx
+	// F5 should load next sector while F1-F4 chainload VBR
 	cmp $4,%ah
-	je read_lba
+	jne load_vbr
+load_next_sector:
+	// GRUB expects to be loaded at 0x8000
+	movl $NMP_CHAIN_GRUB,%eax
+	// Load sector 1, right after MBR
+	movl $0x1,%ebx
+	jmp read_lba
+load_vbr:
 	// Shift to move AH to AL [>> 8] and multiply by 0x10 [<< 4]
 	sar $4,%ax
 	// Get LBA value of partition to boot
@@ -144,10 +153,15 @@ read_part_number:
 	add $0x1BE,%si
 	add %ax,%si
 	movl 0x8(%si),%ebx
+	// VBR expects to be loaded at 0x7C00
+	movl $NMP_CHAIN_VBR,%eax
 read_lba:
+	// Save address to be chainloaded
+	push %eax
 	// SI = DAP location
 	mov $disk_address_packet,%si
-	// Append start sector to DAP
+	// Append start sector and load address to DAP
+	movl %eax,0x4(%si)
 	movl %ebx,0x8(%si)
 	// 42 = Extended sector read
 	mov $0x42,%ah
@@ -155,7 +169,11 @@ read_lba:
 	int $0x13
 	// Check for error and jump to loaded code
 	jc end
-	jmp NMP_BASE_ADDR
+	// Restore chainload address and disk number
+	pop %eax
+	pop %dx
+	// The great jump! Go to second stage
+	jmp *%eax
 end:
 	// Display error message and halt
 	mov $error_str,%si
@@ -171,7 +189,7 @@ disk_address_packet:
 	// Number of sectors to read
 	.2byte 0x0001
 	// Pointer to the memory buffer
-	.4byte NMP_BASE_ADDR
+	.4byte 0x00000000
 	// LBA start sector
 	.8byte 0x0000000000000000
 
