@@ -80,6 +80,15 @@ print_char:
 	inc %si
 	// Loop for characters
 	jmp print_str
+disk_check:
+	// 41 = EDD Installation Check
+	mov $0x41,%ah
+	// Required parameter for interrupt
+	mov $0x55AA,%bx
+	// 13 = Disk Services
+	int $0x13
+	// CF signals no support
+	jc end
 choose_message:
 	// Display a message for choosing the partition
 	mov $ask_str,%si
@@ -133,28 +142,28 @@ wait_input:
 	int $0x16
 	// Loop until keypress
 	je wait_input
-	// Indicate chainloading is in progress
-	mov $end_str,%si
-	mov $valid_partition,%di
-	jmp print_str
-valid_partition:
-	// 41 = EDD Installation Check
-	mov $0x41,%ah
-	// Required parameter for interrupt
-	mov $0x55AA,%bx
-	// 13 = Disk Services
-	int $0x13
-	// CF signals no support
-	jc end
 read_part_number:
 	// 00 = Get Keystroke
 	movb $0x0,%ah
 	// 16 = Keyboard Services
 	int $0x16
-	// Convert F-key to partition number: BIOS scan code is
-	// between 3B and 3F for F1-F5
+	// BIOS scan code is between 3B and 3F for F1-F5
+	cmp $0x3B,%ah
+	jb wait_input
+	cmp $0x3F,%ah
+	ja wait_input
+	// Convert F-key to partition number
 	subb $0x3B,%ah
-	// F5 should load next sector while F1-F4 chainload VBR
+	// Save partition number
+	push %ax
+	// Indicate chainloading is in progress
+	mov $end_str,%si
+	mov $valid_partition,%di
+	jmp print_str
+valid_partition:
+	// Restore partition number
+	pop %ax
+	// F5 should load next sector while F1-F4 chainloads VBR
 	cmp $4,%ah
 	jne load_vbr
 load_next_sector:
