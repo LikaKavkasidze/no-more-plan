@@ -183,6 +183,8 @@ load_vbr:
 	// VBR expects to be loaded at 0x7C00
 	movl $NMP_CHAIN_VBR,%eax
 read_lba:
+	// Restore %dx register, previously destroyed
+	pop %dx
 	// Save address to be chainloaded
 	push %eax
 	// SI = DAP location
@@ -198,7 +200,6 @@ read_lba:
 	jc end
 	// Restore chainload address and disk number
 	pop %eax
-	pop %dx
 	// The great jump! Go to second stage
 	jmp *%eax
 end:
