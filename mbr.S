@@ -66,10 +66,9 @@ relocated_segment:
 print_str:
 	// Access to char pointed by SI
 	mov (%si),%al
-	// Skip over jump
+	// If the char is NUL, stop
 	cmp $0,%al
 	jne print_char
-	// If the char is NUL, stop
 	jmp *%di
 print_char:
 	// 0E = Write Character in TTY Mode
@@ -96,43 +95,44 @@ choose_message:
 	jmp print_str
 test_parts:
 	// Get start of first partition
-	mov $_start,%si
-	add $0x1BE,%si
+	// See, registers are quite scarse, especially in
+	// 16-bit mode, where only %bx, %si and %di can be
+	// use for base/index expressions.
+	// %si and %di are already used for string display
+	// so only %bx is left.
+	mov $_start,%bx
+	add $0x1BE,%bx
 	// Reset partition counter (CX)
 	xor %cx,%cx
 part_loop:
 	// Check for boot signature to see if all partitions have
 	// been looped over
-	mov (%si),%bl
-	cmp $0x55,%bl
+	mov (%bx),%dl
+	cmp $0x55,%dl
 	je part_loop_end
 	// Increment partition counter: used to display partition number
 	add $0x1,%cx
 	// Check if partition is bootable
-	cmp $0x80,%bl
+	cmp $0x80,%dl
 	jne part_loop_next
 part_loop_display:
-	// Displays an "F" (0x46) char
-	mov $0x46,%al
-	// 0E = Write Character in TTY Mode
-	mov $0x0E,%ah
-	// 10 = Video Services
-	int $0x10
 	// Convert partition number to ASCII number
-	mov %cl,%al
-	add $0x30,%al
-	// 0E = Write Character in TTY Mode
-	mov $0x0E,%ah
-	// 10 = Video Services
-	int $0x10
+	mov %cx,%ax
+	add $0x30,%ax
+	// Display key for partition
+	mov $extra_part_str,%si
+	mov %ax,2(%si)
+	mov $part_loop_next,%di
+	jmp print_str
 part_loop_next:
 	// Access next partition: PTE length is 16
-	add $0x10,%si
+	add $0x10,%bx
 	// Test next partition
 	jne part_loop
 part_loop_end:
 	// Display extra key for after-MBR loading (eg. GRUB)
 	mov $extra_part_str,%si
+	movb $0x35,2(%si)
 	mov $wait_input,%di
 	jmp print_str
 wait_input:
@@ -224,7 +224,7 @@ hello_str:
 	.asciz "No. More. Plan.\r\n"
 
 ask_str:
-	.asciz "Partition to boot? "
+	.asciz "Partition to boot?"
 
 extra_part_str:
 	.asciz " F5"
